@@ -2,12 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
-	"io/fs"
 	"net/http"
-	"os"
 	"strconv"
 	"time"
+
+	"github.com/codebuilds-dev/stock-news/auth"
+	"github.com/codebuilds-dev/stock-news/db"
 )
 
 type attributes struct {
@@ -23,62 +23,43 @@ type articleResponse struct {
 	Data []dataItem `json:"data"`
 }
 
-type article struct {
-	Symbol    string
-	CreatedAt time.Time
-	Headline  string
-}
-
 func getArticles(w http.ResponseWriter, r *http.Request) {
-	sizeStr := r.URL.Query().Get("size")
-	numberStr := r.URL.Query().Get("number")
+	apiKey := r.Header.Get("x-rapidapi-key")
+
+	if !auth.ValidateAPIKey(apiKey) {
+		http.Error(w, "Invalid API Key", http.StatusUnauthorized)
+		return
+	}
+
+	if r.Method != http.MethodGet {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
 	id := r.URL.Query().Get("id")
+
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+
+	sizeStr := r.URL.Query().Get("size")
 
 	// Default values for size and number if not provided
 	size, _ := strconv.Atoi(sizeStr)
 	if size == 0 {
-		size = 5 // default size
-	}
-	number, _ := strconv.Atoi(numberStr)
-	if number == 0 {
-		number = 1 // default number
+		size = 10 // default size
 	}
 
-	file, err := os.ReadFile("articles.json")
+	articles, err := db.GetArticles(id, size)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	var allArticles []article
-	if err := json.Unmarshal(file, &allArticles); err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	// Filter articles by ID if provided
-	var filteredArticles []article
-	for _, art := range allArticles {
-		if id == "" || art.Symbol == id {
-			filteredArticles = append(filteredArticles, art)
-		}
-	}
-
-	// Pagination logic (simplified)
-	start := (number - 1) * size
-	end := start + size
-	if end > len(filteredArticles) {
-		end = len(filteredArticles)
-	}
-	if start >= len(filteredArticles) {
-		start = len(filteredArticles)
-	}
-
-	selectedArticles := filteredArticles[start:end]
-
 	var articleRes articleResponse
 
-	for _, art := range selectedArticles {
+	for _, art := range articles {
 		articleRes.Data = append(articleRes.Data, dataItem{
 			Attributes: attributes{
 				PublishOn: art.CreatedAt,
@@ -92,27 +73,31 @@ func getArticles(w http.ResponseWriter, r *http.Request) {
 }
 
 func saveArticle(w http.ResponseWriter, r *http.Request) {
+	apiKey := r.Header.Get("x-rapidapi-key")
 
-	var art article
+	if !auth.ValidateAPIKey(apiKey) {
+		http.Error(w, "Invalid API Key", http.StatusUnauthorized)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "Invalid request method", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var art db.Article
 	err := json.NewDecoder(r.Body).Decode(&art)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	var articles []article
-	file, err := os.ReadFile("articles.json")
-	if err == nil {
-		json.Unmarshal(file, &articles)
-	}
-
-	articles = append(articles, art)
-	data, err := json.Marshal(articles)
+	err = db.SaveArticle(art)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
-	os.WriteFile("articles.json", data, fs.FileMode(0644))
-	fmt.Fprintf(w, "Article saved with ID: %s", art.Symbol)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(art)
 }
