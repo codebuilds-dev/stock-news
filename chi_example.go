@@ -96,3 +96,27 @@ func main_chi() {
 	fmt.Println("Server listening on port 8080")
 	log.Fatal(http.ListenAndServe(":8080", r))
 }
+
+func main_chi2() {
+	// http.HandleFunc("/news/v2/list-by-symbol", getArticles)
+	// http.HandleFunc("/news/v2/save-article", saveArticle)
+
+	// fmt.Println("Server listening on port 8080")
+	// err := http.ListenAndServe(":8080", nil)
+	// log.Fatal(err)
+
+	r := chi.NewRouter()
+
+	r.Use(middleware.RequestID)
+	r.Use(middleware.Logger)
+	r.Use(middleware.Recoverer)
+
+	r.Use(apiKeyValidator)
+
+	r.Get("/api/v1/articles", getArticles)
+	r.Post("/api/v1/articles", saveArticle)
+
+	fmt.Println("Server listening on port 8080")
+	err := http.ListenAndServe(":8080", r)
+	log.Fatal(err)
+}
