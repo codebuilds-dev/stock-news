@@ -101,3 +101,60 @@ func saveArticle(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(art)
 }
+
+func getChiArticles(w http.ResponseWriter, r *http.Request) {
+
+	id := r.URL.Query().Get("id")
+
+	if id == "" {
+		http.Error(w, "id is required", http.StatusBadRequest)
+		return
+	}
+
+	sizeStr := r.URL.Query().Get("size")
+
+	// Default values for size and number if not provided
+	size, _ := strconv.Atoi(sizeStr)
+	if size == 0 {
+		size = 10 // default size
+	}
+
+	articles, err := db.GetArticles(id, size)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	var articleRes articleResponse
+
+	for _, art := range articles {
+		articleRes.Data = append(articleRes.Data, dataItem{
+			Attributes: attributes{
+				PublishOn: art.CreatedAt,
+				Title:     art.Headline,
+			},
+		})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(articleRes)
+}
+
+func saveChiArticle(w http.ResponseWriter, r *http.Request) {
+
+	var art db.Article
+	err := json.NewDecoder(r.Body).Decode(&art)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	err = db.SaveArticle(art)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(art)
+}
